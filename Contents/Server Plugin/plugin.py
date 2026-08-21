@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
+from typing import Optional
 
 # Indigo's placeholder name for a device that hasn't been renamed yet
 # (e.g. "new device", "new device 2" if there's a name collision).
@@ -50,28 +51,48 @@ FAN_INDEX_TO_SPEED = {v: k for k, v in FAN_SPEED_TO_INDEX.items()}
 class Plugin(indigo.PluginBase):
     HTTP_TIMEOUT = 5  # seconds
 
-    def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
+    def __init__(self, pluginId: str, pluginDisplayName: str, pluginVersion: str, pluginPrefs: indigo.Dict) -> None:
+        """Initialize the plugin instance and set the debug logging level.
+
+        Args:
+            pluginId (str): This plugin's bundle identifier.
+            pluginDisplayName (str): The plugin's display name.
+            pluginVersion (str): The plugin's version string.
+            pluginPrefs (indigo.Dict): Saved plugin preferences.
+        """
         super().__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         self.poll_interval = 15  # seconds between polls of each AC system
         self.debug = self.pluginPrefs.get("showDebugInfo", False)
         self.indigo_log_handler.setLevel(logging.DEBUG if self.debug else logging.INFO)
 
-    def startup(self):
+    def startup(self) -> None:
+        """Called once by Indigo when the plugin starts running."""
         self.logger.info("MyAir plugin starting up...")
         systems = list(indigo.devices.iter("self.acSystem"))
         self.logger.info(f"MyAir plugin ready - watching {len(systems)} AC system(s)")
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """Called once by Indigo when the plugin is stopping."""
         self.logger.info("MyAir plugin shutting down...")
 
-    def closedPrefsConfigUi(self, valuesDict, userCancelled):
+    def closedPrefsConfigUi(self, valuesDict: indigo.Dict, userCancelled: bool) -> None:
+        """Apply the plugin preferences dialog's saved values.
+
+        Re-applies the debug logging level live so toggling it takes effect
+        immediately, without requiring a plugin restart.
+
+        Args:
+            valuesDict (indigo.Dict): The saved preference values.
+            userCancelled (bool): True if the dialog was cancelled instead of saved.
+        """
         if userCancelled:
             return
         self.debug = valuesDict.get("showDebugInfo", False)
         self.indigo_log_handler.setLevel(logging.DEBUG if self.debug else logging.INFO)
         self.logger.info(f"Debug logging {'enabled' if self.debug else 'disabled'}")
 
-    def runConcurrentThread(self):
+    def runConcurrentThread(self) -> None:
+        """Indigo's polling loop entry point: poll every enabled AC System every ``poll_interval`` seconds."""
         try:
             while True:
                 for dev in indigo.devices.iter("self.acSystem"):
@@ -86,7 +107,17 @@ class Plugin(indigo.PluginBase):
         except self.StopThread:
             pass
 
-    def deviceStartComm(self, dev):
+    def deviceStartComm(self, dev: indigo.Device) -> None:
+        """Start communication with a device when it's enabled/created.
+
+        For an AC System device, backfills the ``ShowCoolHeatEquipmentStateUI``
+        prop if it predates that Devices.xml default (needed so already-existing
+        devices pick up the ``hvacHeaterIsOn``/``hvacCoolerIsOn`` states), then
+        polls it immediately if configured.
+
+        Args:
+            dev (indigo.Device): The device being started.
+        """
         super().deviceStartComm(dev)
         self.logger.debug(f"deviceStartComm: {dev.name} (type: {dev.deviceTypeId})")
         # Refresh the state list in case Devices.xml gained new states since
@@ -116,15 +147,26 @@ class Plugin(indigo.PluginBase):
             # during that window just produces a misleading "no IP" error.
             self._poll_system(dev)
 
-    def deviceStopComm(self, dev):
+    def deviceStopComm(self, dev: indigo.Device) -> None:
+        """Stop communication with a device when it's disabled/deleted.
+
+        Args:
+            dev (indigo.Device): The device being stopped.
+        """
         super().deviceStopComm(dev)
         self.logger.debug(f"deviceStopComm: {dev.name} (type: {dev.deviceTypeId})")
 
-    def deviceDeleted(self, dev):
-        # Polling is entirely driven by iterating existing acSystem devices,
-        # so deleting one leaves its zone/mode/fan-control children with
-        # nothing ever looking at them again - flag them rather than let
-        # them silently go stale forever.
+    def deviceDeleted(self, dev: indigo.Device) -> None:
+        """Flag an AC System's zone/mode/fan-control children as orphaned when it's deleted.
+
+        Polling is entirely driven by iterating existing acSystem devices, so
+        deleting one leaves its children with nothing ever looking at them
+        again - this flags them rather than letting them silently go stale
+        forever.
+
+        Args:
+            dev (indigo.Device): The device that was deleted.
+        """
         if dev.deviceTypeId != "acSystem":
             return
         system_id = str(dev.id)
@@ -136,17 +178,38 @@ class Plugin(indigo.PluginBase):
                     child.setErrorStateOnServer(f'Parent AC System "{dev.name}" was deleted')
                     self.logger.warning(f'{child.name}: parent AC System "{dev.name}" was deleted - this device is now orphaned')
 
-    def closedDeviceConfigUi(self, valuesDict, userCancelled, typeId, devId):
-        # Fires the instant the New/Edit Device dialog is dismissed with Save -
-        # by now the device has whatever name the user actually typed, so this
-        # is what lets child devices get created under the real name right
-        # away instead of waiting on the next poll after a rename.
+    def closedDeviceConfigUi(self, valuesDict: indigo.Dict, userCancelled: bool, typeId: str, devId: int) -> None:
+        """Poll a newly-saved AC System immediately so its name is already finalized.
+
+        Fires the instant the New/Edit Device dialog is dismissed with Save -
+        by now the device has whatever name the user actually typed, so this
+        is what lets child devices get created under the real name right away
+        instead of waiting on the next poll after a rename.
+
+        Args:
+            valuesDict (indigo.Dict): The dialog's saved field values.
+            userCancelled (bool): True if the dialog was cancelled instead of saved.
+            typeId (str): The device type that was configured.
+            devId (int): The device's ID.
+        """
         if not userCancelled and typeId == "acSystem" and devId in indigo.devices:
             dev = indigo.devices[devId]
             if dev.configured:
                 self._poll_system(dev)
 
-    def validateDeviceConfigUi(self, valuesDict, typeId, devId):
+    def validateDeviceConfigUi(self, valuesDict: indigo.Dict, typeId: str, devId: int) -> tuple:
+        """Validate the New/Edit Device dialog before it's allowed to save.
+
+        Args:
+            valuesDict (indigo.Dict): The dialog's current field values.
+            typeId (str): The device type being configured.
+            devId (int): The device's ID (0 for a device being newly created).
+
+        Returns:
+            tuple: ``(True, valuesDict)`` if valid, or
+                ``(False, valuesDict, errorsDict)`` with per-field error messages
+                if not.
+        """
         errors_dict = indigo.Dict()
         if typeId == "acSystem":
             address = valuesDict.get("address", "").strip()
@@ -166,19 +229,40 @@ class Plugin(indigo.PluginBase):
             return (False, valuesDict, errors_dict)
         return (True, valuesDict)
 
-    def get_ac_systems(self, filter="", valuesDict=None, typeId="", targetId=0):
-        """Dynamic menu list for the zone device's 'AC System' picker."""
+    def get_ac_systems(self, filter: str = "", valuesDict: Optional[indigo.Dict] = None, typeId: str = "", targetId: int = 0) -> list:
+        """Dynamic menu list for the zone device's 'AC System' picker.
+
+        Args:
+            filter (str): Indigo's dynamic-list filter string (unused).
+            valuesDict (Optional[indigo.Dict]): The dialog's current field values (unused).
+            typeId (str): The device type being configured (unused).
+            targetId (int): The device's ID (unused).
+
+        Returns:
+            list: ``(device_id, device_name)`` tuples for every AC System device.
+        """
         return [(dev.id, dev.name) for dev in indigo.devices.iter("self.acSystem")]
 
     # ------------------------------------------------------------------
     # HTTP helpers
     # ------------------------------------------------------------------
 
-    def _get_system_data(self, ip, retries=2, retry_delay=1.0):
-        # The controller can briefly return an empty/incomplete response right
-        # after processing a command (seen in practice, and guarded against by
-        # homebridge-myplace's own retry logic) - tolerate a couple of retries
-        # before treating it as a real failure.
+    def _get_system_data(self, ip: str, retries: int = 2, retry_delay: float = 1.0) -> Optional[dict]:
+        """Fetch the controller's full system/zone status via ``GET /getSystemData``.
+
+        The controller can briefly return an empty/incomplete response right
+        after processing a command (seen in practice, and guarded against by
+        homebridge-myplace's own retry logic) - tolerate a couple of retries
+        before treating it as a real failure.
+
+        Args:
+            ip (str): The MyAir controller's local IP address.
+            retries (int): How many times to retry an empty/incomplete response.
+            retry_delay (float): Seconds to wait between retries.
+
+        Returns:
+            Optional[dict]: The parsed JSON response, or None on failure.
+        """
         url = f"http://{ip}:2025/getSystemData"
         self.logger.debug(f"GET {url}")
         for attempt in range(retries + 1):
@@ -207,7 +291,16 @@ class Plugin(indigo.PluginBase):
         self.logger.warning(f"MyAir controller at {ip} kept returning an incomplete response - it may have been mid-command")
         return None
 
-    def _send_command(self, ip, payload):
+    def _send_command(self, ip: str, payload: dict) -> bool:
+        """Send a command to the controller via ``GET /setAircon``.
+
+        Args:
+            ip (str): The MyAir controller's local IP address.
+            payload (dict): The command payload, e.g. ``{"ac1": {"info": {...}}}``.
+
+        Returns:
+            bool: True if the controller accepted the request, False otherwise.
+        """
         url = f"http://{ip}:2025/setAircon?json={urllib.parse.quote(json.dumps(payload))}"
         self.logger.debug(f"Sending command to {ip}: {payload}")
         try:
@@ -226,7 +319,18 @@ class Plugin(indigo.PluginBase):
     # Polling
     # ------------------------------------------------------------------
 
-    def _poll_system(self, dev):
+    def _poll_system(self, dev: indigo.Device) -> None:
+        """Poll one AC System device: fetch, parse, and write its current state.
+
+        Writes the thermostat's native states plus the custom
+        acMode/acFanSpeed/acZoneCount/acCountdownOn/acCountdownOff states, then
+        discovers/syncs its zone, mode-button, and fan-control child devices
+        (discovery is deferred while the device still has Indigo's placeholder
+        name, to avoid naming children after it permanently).
+
+        Args:
+            dev (indigo.Device): The AC System device to poll.
+        """
         ip = dev.pluginProps.get("address", "")
         if not ip:
             self.logger.error(f"No IP address specified for {dev.name}")
@@ -302,8 +406,12 @@ class Plugin(indigo.PluginBase):
         self._sync_mode_buttons(dev, mode, state)
         self._sync_fan_controls(dev, fan)
 
-    def _discover_fan_controls(self, system_dev):
-        """Create the fan speed control and Fan Auto button for a system if missing."""
+    def _discover_fan_controls(self, system_dev: indigo.Device) -> None:
+        """Create the fan speed control and Fan Auto button for a system if missing.
+
+        Args:
+            system_dev (indigo.Device): The AC System device to create controls for.
+        """
         has_speed_control = any(
             d.pluginProps.get("systemDevice") == str(system_dev.id)
             for d in indigo.devices.iter("self.fanSpeedControl")
@@ -334,8 +442,13 @@ class Plugin(indigo.PluginBase):
             new_dev.updateStateOnServer("onOffState", False)
             self.logger.info(f"Created fan auto button: {new_dev.name}")
 
-    def _sync_fan_controls(self, system_dev, fan):
-        """Reflect the AC's real fan speed onto the speed control and Fan Auto button."""
+    def _sync_fan_controls(self, system_dev: indigo.Device, fan: str) -> None:
+        """Reflect the AC's real fan speed onto the speed control and Fan Auto button.
+
+        Args:
+            system_dev (indigo.Device): The AC System device whose fan controls to sync.
+            fan (str): The controller's current fan speed value (e.g. ``"low"``, ``"autoAA"``).
+        """
         speed_index = FAN_SPEED_TO_INDEX.get(fan, 0)
         for d in indigo.devices.iter("self.fanSpeedControl"):
             if not d.enabled:
@@ -355,8 +468,12 @@ class Plugin(indigo.PluginBase):
                 self.logger.debug(f"{d.name}: onOffState {d.states.get('onOffState')} -> {is_auto}")
                 d.updateStateOnServer("onOffState", is_auto)
 
-    def _discover_mode_buttons(self, system_dev):
-        """Create the Vent/Dry mode-button child devices for a system if missing."""
+    def _discover_mode_buttons(self, system_dev: indigo.Device) -> None:
+        """Create the Vent/Dry mode-button child devices for a system if missing.
+
+        Args:
+            system_dev (indigo.Device): The AC System device to create mode buttons for.
+        """
         existing = {
             md.pluginProps.get("mode")
             for md in indigo.devices.iter("self.modeButton")
@@ -375,8 +492,14 @@ class Plugin(indigo.PluginBase):
             new_dev.updateStateOnServer("onOffState", False)
             self.logger.info(f"Created mode button: {new_dev.name}")
 
-    def _sync_mode_buttons(self, system_dev, mode, state):
-        """Reflect the AC's real mode onto the Vent/Dry button devices' on/off state."""
+    def _sync_mode_buttons(self, system_dev: indigo.Device, mode: str, state: str) -> None:
+        """Reflect the AC's real mode onto the Vent/Dry button devices' on/off state.
+
+        Args:
+            system_dev (indigo.Device): The AC System device whose mode buttons to sync.
+            mode (str): The controller's current mode (e.g. ``"vent"``, ``"dry"``, ``"cool"``).
+            state (str): The controller's current power state (``"on"`` or ``"off"``).
+        """
         active_mode = mode if state == "on" else None
         for md in indigo.devices.iter("self.modeButton"):
             if not md.enabled:
@@ -388,9 +511,14 @@ class Plugin(indigo.PluginBase):
                 self.logger.debug(f"{md.name}: onOffState {md.states.get('onOffState')} -> {is_on}")
                 md.updateStateOnServer("onOffState", is_on)
 
-    def _discover_zones(self, system_dev, zones):
+    def _discover_zones(self, system_dev: indigo.Device, zones: dict) -> None:
         """Create a Zone child device for any zone reported by the controller that
-        doesn't already have one, using the name/number MyAir itself reports."""
+        doesn't already have one, using the name/number MyAir itself reports.
+
+        Args:
+            system_dev (indigo.Device): The AC System device the zones belong to.
+            zones (dict): The controller's current ``zones`` mapping (e.g. ``{"z01": {...}}``).
+        """
         existing = {
             zd.pluginProps.get("zoneNumber")
             for zd in indigo.devices.iter("self.zoneDevice")
@@ -417,7 +545,17 @@ class Plugin(indigo.PluginBase):
             ])
             self.logger.info(f"Discovered MyAir zone: {new_dev.name}")
 
-    def _poll_zones(self, system_dev, zones):
+    def _poll_zones(self, system_dev: indigo.Device, zones: dict) -> None:
+        """Write each of a system's zone devices' current state from the controller's response.
+
+        Flags a zone device with an Indigo error state if the controller stops
+        reporting it (e.g. removed on the MyAir side), rather than letting it
+        go stale silently.
+
+        Args:
+            system_dev (indigo.Device): The AC System device the zones belong to.
+            zones (dict): The controller's current ``zones`` mapping (e.g. ``{"z01": {...}}``).
+        """
         for zone_dev in indigo.devices.iter("self.zoneDevice"):
             if not zone_dev.enabled:
                 continue
@@ -454,7 +592,15 @@ class Plugin(indigo.PluginBase):
             )
             zone_dev.updateStatesOnServer(z_states)
 
-    def _get_system_device(self, child_dev):
+    def _get_system_device(self, child_dev: indigo.Device) -> Optional[indigo.Device]:
+        """Resolve a zone/mode-button/fan-control child device back to its parent AC System.
+
+        Args:
+            child_dev (indigo.Device): The child device whose ``systemDevice`` prop to resolve.
+
+        Returns:
+            Optional[indigo.Device]: The parent AC System device, or None if unset/missing.
+        """
         system_id = child_dev.pluginProps.get("systemDevice", "")
         if system_id and int(system_id) in indigo.devices:
             return indigo.devices[int(system_id)]
@@ -464,7 +610,13 @@ class Plugin(indigo.PluginBase):
     # AC System (thermostat) actions
     # ------------------------------------------------------------------
 
-    def actionControlThermostat(self, action, dev):
+    def actionControlThermostat(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Handle a native thermostat action (mode, setpoints, request status) on an AC System.
+
+        Args:
+            action (indigo.PluginAction): The thermostat action to perform.
+            dev (indigo.Device): The AC System device the action applies to.
+        """
         self.logger.debug(
             f"actionControlThermostat: {dev.name} action={action.thermostatAction} "
             f"actionValue={getattr(action, 'actionValue', None)} actionMode={getattr(action, 'actionMode', None)}"
@@ -489,7 +641,14 @@ class Plugin(indigo.PluginBase):
         elif action.thermostatAction in (ta.RequestStatusAll, ta.RequestMode, ta.RequestTemperatures, ta.RequestSetpoints):
             self._poll_system(dev)
 
-    def _set_hvac_mode(self, dev, ip, hvac_mode):
+    def _set_hvac_mode(self, dev: indigo.Device, ip: str, hvac_mode: int) -> None:
+        """Send a native Indigo HVAC mode (Cool/Heat/Off) to the controller.
+
+        Args:
+            dev (indigo.Device): The AC System device.
+            ip (str): The controller's local IP address.
+            hvac_mode (int): One of the ``indigo.kHvacMode`` constants.
+        """
         mode_str = HVAC_MODE_TO_MYAIR.get(hvac_mode)
         if mode_str is None and hvac_mode != indigo.kHvacMode.Off:
             self.logger.error(f"Unsupported HVAC mode for {dev.name} - use the Set AC Mode action for Vent/Dry")
@@ -501,13 +660,25 @@ class Plugin(indigo.PluginBase):
             self.logger.info(f"{dev.name}: set mode to {mode_str or 'off'}")
             self._poll_system(dev)
 
-    def _set_temp(self, dev, ip, new_setpoint):
+    def _set_temp(self, dev: indigo.Device, ip: str, new_setpoint: float) -> None:
+        """Send a new setpoint temperature to the controller.
+
+        Args:
+            dev (indigo.Device): The AC System device.
+            ip (str): The controller's local IP address.
+            new_setpoint (float): The target temperature.
+        """
         if self._send_command(ip, {"ac1": {"info": {"setTemp": round(new_setpoint, 1)}}}):
             self.logger.info(f"{dev.name}: set temperature to {new_setpoint:.1f}°")
             self._poll_system(dev)
 
-    def setAcMode(self, action, dev):
-        """Custom action: set Cool/Heat/Vent/Dry (Vent and Dry aren't reachable via the native thermostat mode control)."""
+    def setAcMode(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Custom action: set Cool/Heat/Vent/Dry (Vent and Dry aren't reachable via the native thermostat mode control).
+
+        Args:
+            action (indigo.PluginAction): The triggering Indigo action, carrying the ``mode`` prop.
+            dev (indigo.Device): The AC System device the action applies to.
+        """
         ip = dev.pluginProps.get("address", "")
         mode = action.props.get("mode", "cool")
         self.logger.debug(f"setAcMode: {dev.name} mode={mode}")
@@ -518,7 +689,13 @@ class Plugin(indigo.PluginBase):
             self.logger.info(f"{dev.name}: set mode to {mode}")
             self._poll_system(dev)
 
-    def setFanSpeed(self, action, dev):
+    def setFanSpeed(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Custom action: set the AC's fan speed (Low/Medium/High/Auto).
+
+        Args:
+            action (indigo.PluginAction): The triggering Indigo action, carrying the ``fanSpeed`` prop.
+            dev (indigo.Device): The AC System device the action applies to.
+        """
         ip = dev.pluginProps.get("address", "")
         fan = action.props.get("fanSpeed", "autoAA")
         self.logger.debug(f"setFanSpeed: {dev.name} fan={fan}")
@@ -533,7 +710,18 @@ class Plugin(indigo.PluginBase):
     # Zone (dimmer) actions
     # ------------------------------------------------------------------
 
-    def actionControlDimmerRelay(self, action, dev):
+    def actionControlDimmerRelay(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Handle a native dimmer/relay action, dispatching by device type.
+
+        Shared entry point for zone, mode-button, and fan-auto-button devices
+        (all use the dimmer/relay action namespace) - mode-button and
+        fan-auto-button are delegated to their own handlers; only zone devices
+        are handled directly here.
+
+        Args:
+            action (indigo.PluginAction): The dimmer/relay action to perform.
+            dev (indigo.Device): The device the action applies to.
+        """
         self.logger.debug(f"actionControlDimmerRelay: {dev.name} ({dev.deviceTypeId}) action={action.deviceAction} value={getattr(action, 'actionValue', None)}")
         if dev.deviceTypeId == "modeButton":
             self._control_mode_button(action, dev)
@@ -577,10 +765,17 @@ class Plugin(indigo.PluginBase):
             self.logger.info(f"Zone {dev.name}: {action.deviceAction}")
         self._poll_system(system_dev)
 
-    def setZoneTemp(self, action, dev):
-        """Custom action: set a zone's own target temperature. Only has any
-        effect on zones with their own temperature sensor - MyAir silently
-        ignores it on zones that don't, so there's nothing to detect/guard here."""
+    def setZoneTemp(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Custom action: set a zone's own target temperature.
+
+        Only has any effect on zones with their own temperature sensor - MyAir
+        silently ignores it on zones that don't, so there's nothing to
+        detect/guard here.
+
+        Args:
+            action (indigo.PluginAction): The triggering Indigo action, carrying the ``temperature`` prop.
+            dev (indigo.Device): The zone device the action applies to.
+        """
         system_dev = self._get_system_device(dev)
         if not system_dev:
             self.logger.error(f"No AC System configured for {dev.name}")
@@ -601,7 +796,16 @@ class Plugin(indigo.PluginBase):
             self.logger.info(f"{dev.name}: set zone temperature to {temperature:.1f}°")
             self._poll_system(system_dev)
 
-    def _control_mode_button(self, action, dev):
+    def _control_mode_button(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Handle On/Off/Request Status for a Vent/Dry mode-button device.
+
+        Turning a mode button off always means "turn the AC off entirely" -
+        there's no other sensible meaning for switching a mode "off".
+
+        Args:
+            action (indigo.PluginAction): The relay action to perform.
+            dev (indigo.Device): The mode-button device the action applies to.
+        """
         system_dev = self._get_system_device(dev)
         if not system_dev:
             self.logger.error(f"No AC System configured for {dev.name}")
@@ -624,7 +828,16 @@ class Plugin(indigo.PluginBase):
             return
         self._poll_system(system_dev)
 
-    def _control_fan_auto_button(self, action, dev):
+    def _control_fan_auto_button(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Handle On/Off/Request Status for the Fan Auto button device.
+
+        There's no sensible "turn auto off" - the fan speed is left as-is and
+        the user is pointed at the Fan Speed device instead.
+
+        Args:
+            action (indigo.PluginAction): The relay action to perform.
+            dev (indigo.Device): The fan-auto-button device the action applies to.
+        """
         system_dev = self._get_system_device(dev)
         if not system_dev:
             self.logger.error(f"No AC System configured for {dev.name}")
@@ -650,7 +863,17 @@ class Plugin(indigo.PluginBase):
     # Fan speed (speedcontrol) actions
     # ------------------------------------------------------------------
 
-    def actionControlSpeedControl(self, action, dev):
+    def actionControlSpeedControl(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
+        """Handle a native speed-control action on the Fan Speed device.
+
+        MyAir has no fan-off or continuous-level concept, only discrete
+        Low/Medium/High/Auto, so TurnOn/TurnOff/Toggle/SetSpeedLevel are not
+        meaningful and just log a pointer to the right device/action instead.
+
+        Args:
+            action (indigo.PluginAction): The speed-control action to perform.
+            dev (indigo.Device): The fan-speed-control device the action applies to.
+        """
         self.logger.debug(f"actionControlSpeedControl: {dev.name} action={action.speedControlAction} value={getattr(action, 'actionValue', None)}")
         if dev.deviceTypeId != "fanSpeedControl":
             return
@@ -679,7 +902,15 @@ class Plugin(indigo.PluginBase):
             # continuous-level concept, only discrete Low/Medium/High/Auto.
             self.logger.info(f"{dev.name}: use Low/Medium/High (this device) or the Fan Auto device for automatic speed")
 
-    def _set_fan_speed_index(self, dev, system_dev, ip, speed_index):
+    def _set_fan_speed_index(self, dev: indigo.Device, system_dev: indigo.Device, ip: str, speed_index: int) -> None:
+        """Translate a speedcontrol index (1/2/3) to MyAir's fan value and send it.
+
+        Args:
+            dev (indigo.Device): The fan-speed-control device, used only for log messages.
+            system_dev (indigo.Device): The parent AC System device to command/re-poll.
+            ip (str): The controller's local IP address.
+            speed_index (int): The target speedcontrol index (1=Low, 2=Medium, 3=High).
+        """
         fan_value = FAN_INDEX_TO_SPEED.get(speed_index)
         if fan_value is None:
             self.logger.info(f"{dev.name}: index {speed_index} has no MyAir equivalent - use the Fan Auto device for automatic speed")
