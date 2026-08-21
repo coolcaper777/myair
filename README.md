@@ -9,7 +9,7 @@ An [Indigo Domotics](https://www.indigodomo.com/) plugin that integrates **Advan
 
 ## Installation
 
-1. Download the latest release's `MyAir.indigoPlugin.zip` from the [Releases page](https://github.com/coolcaper777/myair/releases) and unzip it — you'll get a folder named `MyAir.indigoPlugin`.
+1. Download the latest release's zip from the [Releases page](https://github.com/coolcaper777/myair/releases) — Safari extracts it automatically into a folder named `MyAir.indigoPlugin`.
    - *(Cloning the repo instead? The checked-out folder is named `myair`, not `MyAir.indigoPlugin` — rename it before installing, or Indigo won't recognize it as a plugin.)*
 2. Double-click `MyAir.indigoPlugin` (or drag it onto the Indigo Server icon) to install, or copy it into `~/Library/Application Support/Perceptive Automation/Indigo <version>/Plugins/`.
 3. Restart the plugin from Indigo's Plugins menu. No external Python dependencies are required.
