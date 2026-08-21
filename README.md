@@ -7,6 +7,14 @@ An [Indigo Domotics](https://www.indigodomo.com/) plugin that integrates **Advan
 
 > The MyAir local API's field/value shapes were cross-checked against [uswong/homebridge-myplace](https://github.com/uswong/homebridge-myplace)'s `MyPlace.sh`, an actively-maintained script that talks to the same API. The shape is confirmed, but this plugin itself is still lightly tested against real hardware — enable debug logging (below) if something looks off and compare the logged payloads against what your controller actually reports.
 
+## Installation
+
+1. Download the latest release's `MyAir.indigoPlugin.zip` from the [Releases page](https://github.com/coolcaper777/myair/releases) and unzip it — you'll get a folder named `MyAir.indigoPlugin`.
+   - *(Cloning the repo instead? The checked-out folder is named `myair`, not `MyAir.indigoPlugin` — rename it before installing, or Indigo won't recognize it as a plugin.)*
+2. Double-click `MyAir.indigoPlugin` (or drag it onto the Indigo Server icon) to install, or copy it into `~/Library/Application Support/Perceptive Automation/Indigo <version>/Plugins/`.
+3. Restart the plugin from Indigo's Plugins menu. No external Python dependencies are required.
+4. Create a **MyAir AC System** device with your controller's IP address; zones, mode buttons, and fan controls are then auto-discovered.
+
 ## What it does
 
 - Polls the MyAir controller every 15 seconds for system and per-zone state.
