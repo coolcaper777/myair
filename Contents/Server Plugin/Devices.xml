@@ -1,0 +1,168 @@
+<?xml version="1.0"?>
+<Devices>
+    <Device type="thermostat" id="acSystem">
+        <Name>MyAir AC System</Name>
+        <ConfigUI>
+            <Field id="address" type="textfield">
+                <Label>MyAir Controller IP Address:</Label>
+                <Description>Local IP address of the MyAir tablet/controller (local API on port 2025)</Description>
+            </Field>
+            <!-- Fixed thermostat capabilities for MyAir - hidden since every MyAir
+                 system has the same shape (one temp sensor, no humidity, a single
+                 setTemp shared by cool/heat). Vent/Dry modes and fan speed don't fit
+                 Indigo's native mode/fan enums, so they're handled via the custom
+                 acMode/acFanSpeed states and Set AC Mode / Set Fan Speed actions below. -->
+            <Field id="NumTemperatureInputs" type="menu" defaultValue="1" hidden="true">
+                <Label>Number of temperature sensors:</Label>
+                <List>
+                    <Option value="1">1</Option>
+                </List>
+            </Field>
+            <Field id="NumHumidityInputs" type="menu" defaultValue="0" hidden="true">
+                <Label>Number of humidity sensors:</Label>
+                <List>
+                    <Option value="0">0</Option>
+                </List>
+            </Field>
+            <Field id="SupportsHeatSetpoint" type="checkbox" defaultValue="true" hidden="true">
+                <Label>Supports heat setpoint</Label>
+            </Field>
+            <Field id="SupportsCoolSetpoint" type="checkbox" defaultValue="true" hidden="true">
+                <Label>Supports cool setpoint</Label>
+            </Field>
+            <Field id="SupportsHvacOperationMode" type="checkbox" defaultValue="true" hidden="true">
+                <Label>Supports thermostat modes</Label>
+            </Field>
+            <Field id="SupportsHvacFanMode" type="checkbox" defaultValue="false" hidden="true">
+                <Label>Supports fan modes</Label>
+            </Field>
+            <Field id="ShowCoolHeatEquipmentStateUI" type="checkbox" defaultValue="true" hidden="true">
+                <Label>Supports compressor/furnace feedback</Label>
+                <Description>Drives the device list's orange/blue heat/cool icon</Description>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="acMode">
+                <ValueType>String</ValueType>
+                <TriggerLabel>AC Mode Changed</TriggerLabel>
+                <ControlPageLabel>AC Mode</ControlPageLabel>
+            </State>
+            <State id="acFanSpeed">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Fan Speed Changed</TriggerLabel>
+                <ControlPageLabel>Fan Speed</ControlPageLabel>
+            </State>
+            <State id="acZoneCount">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Zone Count Changed</TriggerLabel>
+                <ControlPageLabel>Zone Count</ControlPageLabel>
+            </State>
+            <State id="acCountdownOn">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Countdown To On Changed</TriggerLabel>
+                <ControlPageLabel>Countdown To On</ControlPageLabel>
+                <Units>min</Units>
+            </State>
+            <State id="acCountdownOff">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Countdown To Off Changed</TriggerLabel>
+                <ControlPageLabel>Countdown To Off</ControlPageLabel>
+                <Units>min</Units>
+            </State>
+        </States>
+    </Device>
+
+    <Device type="dimmer" id="zoneDevice">
+        <Name>MyAir Zone</Name>
+        <ConfigUI>
+            <Field id="systemDevice" type="menu">
+                <Label>AC System:</Label>
+                <Description>Which MyAir AC System this zone belongs to</Description>
+                <List class="self" method="get_ac_systems" dynamicReload="true"/>
+            </Field>
+            <Field id="zoneNumber" type="menu" defaultValue="1">
+                <Label>Zone Number:</Label>
+                <Description>Zone number as configured on the MyAir controller</Description>
+                <List>
+                    <Option value="1">1</Option>
+                    <Option value="2">2</Option>
+                    <Option value="3">3</Option>
+                    <Option value="4">4</Option>
+                    <Option value="5">5</Option>
+                    <Option value="6">6</Option>
+                    <Option value="7">7</Option>
+                </List>
+            </Field>
+            <Field id="logChanges" type="checkbox" defaultValue="True">
+                <Label>Log events and changes to Indigo log</Label>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="zoneTemp">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Zone Temperature Changed</TriggerLabel>
+                <ControlPageLabel>Zone Temperature</ControlPageLabel>
+                <Units>°</Units>
+            </State>
+            <State id="zoneSetTemp">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Zone Set Temperature Changed</TriggerLabel>
+                <ControlPageLabel>Zone Set Temperature</ControlPageLabel>
+                <Units>°</Units>
+            </State>
+            <State id="zoneSignalStrength">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Signal Strength Changed</TriggerLabel>
+                <ControlPageLabel>Signal Strength</ControlPageLabel>
+            </State>
+        </States>
+    </Device>
+
+    <!-- On/off child device per Vent/Dry mode, auto-created per AC System
+         (_discover_mode_buttons). Cool/Heat/Off already have the native
+         thermostat dial on the AC System device, so they don't get one of
+         these - only the two modes with no native Indigo equivalent do. -->
+    <Device type="relay" id="modeButton">
+        <Name>MyAir Mode Button</Name>
+        <ConfigUI>
+            <Field id="systemDevice" type="menu">
+                <Label>AC System:</Label>
+                <Description>Which MyAir AC System this button controls</Description>
+                <List class="self" method="get_ac_systems" dynamicReload="true"/>
+            </Field>
+            <Field id="mode" type="menu" defaultValue="vent">
+                <Label>Mode:</Label>
+                <List>
+                    <Option value="vent">Vent (fan only)</Option>
+                    <Option value="dry">Dry</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+    </Device>
+
+    <!-- Fan speed as a native speedcontrol device: speedIndex 1/2/3 = Low/Medium/High.
+         MyAir has no fan-off concept independent of the AC itself, so the native
+         "off" (speedIndex 0) position isn't wired to anything - see fanAutoButton
+         below for Auto, which is a genuinely different concept from off. -->
+    <Device type="speedcontrol" id="fanSpeedControl">
+        <Name>MyAir Fan Speed</Name>
+        <ConfigUI>
+            <Field id="systemDevice" type="menu">
+                <Label>AC System:</Label>
+                <Description>Which MyAir AC System this controls</Description>
+                <List class="self" method="get_ac_systems" dynamicReload="true"/>
+            </Field>
+        </ConfigUI>
+    </Device>
+
+    <Device type="relay" id="fanAutoButton">
+        <Name>MyAir Fan Auto</Name>
+        <ConfigUI>
+            <Field id="systemDevice" type="menu">
+                <Label>AC System:</Label>
+                <Description>Which MyAir AC System this controls</Description>
+                <List class="self" method="get_ac_systems" dynamicReload="true"/>
+            </Field>
+        </ConfigUI>
+    </Device>
+</Devices>

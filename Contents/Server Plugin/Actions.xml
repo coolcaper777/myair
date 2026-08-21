@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<Actions>
+    <!-- Off/Heat/Cool are handled by the native thermostat actions
+         (actionControlThermostat). Vent and Dry have no native Indigo
+         HVAC mode equivalent, so they're only reachable via this action. -->
+    <Action id="setAcMode" deviceFilter="self.acSystem">
+        <Name>Set AC Mode</Name>
+        <CallbackMethod>setAcMode</CallbackMethod>
+        <ConfigUI>
+            <Field id="mode" type="menu" defaultValue="cool">
+                <Label>Mode:</Label>
+                <List>
+                    <Option value="cool">Cool</Option>
+                    <Option value="heat">Heat</Option>
+                    <Option value="vent">Vent (fan only)</Option>
+                    <Option value="dry">Dry</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+    </Action>
+    <Action id="setFanSpeed" deviceFilter="self.acSystem">
+        <Name>Set Fan Speed</Name>
+        <CallbackMethod>setFanSpeed</CallbackMethod>
+        <ConfigUI>
+            <Field id="fanSpeed" type="menu" defaultValue="autoAA">
+                <Label>Fan Speed:</Label>
+                <List>
+                    <Option value="low">Low</Option>
+                    <Option value="medium">Medium</Option>
+                    <Option value="high">High</Option>
+                    <Option value="autoAA">Auto</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+    </Action>
+    <!-- Only takes effect on zones with their own temperature sensor -
+         confirmed real (setAircon?json={ac1:{zones:{zN:{setTemp:...}}}}) via
+         uswong/homebridge-myplace's MyPlace.sh, but which zones actually
+         support it isn't knowable from getSystemData alone, so this is
+         offered on every zone and just has no effect on ones that don't. -->
+    <Action id="setZoneTemp" deviceFilter="self.zoneDevice">
+        <Name>Set Zone Temperature</Name>
+        <CallbackMethod>setZoneTemp</CallbackMethod>
+        <ConfigUI>
+            <Field id="temperature" type="textfield" defaultValue="22">
+                <Label>Target Temperature:</Label>
+                <Description>Only takes effect on zones with their own temperature sensor</Description>
+            </Field>
+        </ConfigUI>
+    </Action>
+</Actions>
