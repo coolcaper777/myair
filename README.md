@@ -2,7 +2,7 @@
 
 An [Indigo Domotics](https://www.indigodomo.com/) plugin that integrates **Advantage Air MyAir** ducted air conditioning controllers over their local network API, exposing the AC system, its zones, and its fan/mode controls as native Indigo devices.
 
-- **Requires:** Indigo Server API 3.1+
+- **Requires:** Indigo 2022.1.2+ (Server API 3.1+)
 - **Controller connection:** local HTTP, no cloud/account required — talks directly to the MyAir controller/tablet on port 2025
 
 > The MyAir local API's field/value shapes were cross-checked against [uswong/homebridge-myplace](https://github.com/uswong/homebridge-myplace)'s `MyPlace.sh`, an actively-maintained script that talks to the same API. The shape is confirmed, but this plugin itself is still lightly tested against real hardware — enable debug logging (below) if something looks off and compare the logged payloads against what your controller actually reports.
