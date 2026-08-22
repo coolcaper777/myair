@@ -389,8 +389,21 @@ class Plugin(indigo.PluginBase):
         if set_temp is not None:
             states.append({"key": "setpointCool", "value": set_temp, "uiValue": f"{set_temp:.1f} °"})
             states.append({"key": "setpointHeat", "value": set_temp, "uiValue": f"{set_temp:.1f} °"})
-        if measured_temp is not None:
-            states.append({"key": "temperatureInput1", "value": measured_temp, "uiValue": f"{measured_temp:.1f} °"})
+        # Indigo's native thermostat device list State column always shows
+        # temperatureInput1, ignoring UiDisplayStateId - stateColumnTemp picks
+        # what that state actually holds: the selected/target temp, or the
+        # measured temp from myZone's sensor. No fallback between the two -
+        # if "measured" is chosen and myZone isn't reporting a reading, this
+        # writes an explicit 0 rather than leaving whatever was last written
+        # (which would otherwise freeze on a stale setpoint from before the
+        # setting was switched, making the toggle look like it does nothing).
+        show_measured = dev.pluginProps.get("stateColumnTemp", "setpoint") == "measured"
+        if show_measured:
+            display_temp = measured_temp if measured_temp is not None else 0
+        else:
+            display_temp = set_temp
+        if display_temp is not None:
+            states.append({"key": "temperatureInput1", "value": display_temp, "uiValue": f"{display_temp:.1f} °"})
         dev.updateStatesOnServer(states)
 
         if NEW_DEVICE_NAME_RE.match(dev.name.strip()):

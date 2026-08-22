@@ -7,6 +7,19 @@
                 <Label>MyAir Controller IP Address:</Label>
                 <Description>Local IP address of the MyAir tablet/controller (local API on port 2025)</Description>
             </Field>
+            <!-- Indigo's thermostat device list always shows temperatureInput1 in
+                 its State column, regardless of UiDisplayStateId - so this decides
+                 what that state actually holds. "measured" only shows real data if
+                 this MyAir system has a "my zone" reference sensor configured
+                 (myZone) - otherwise it silently falls back to the selected temp. -->
+            <Field id="stateColumnTemp" type="menu" defaultValue="setpoint">
+                <Label>Device list State column shows:</Label>
+                <Description>What to show as this device's temperature - the temp you've set the AC to, or the temp measured by its "my zone" reference sensor (if configured)</Description>
+                <List>
+                    <Option value="setpoint">Selected temperature</Option>
+                    <Option value="measured">Measured temperature</Option>
+                </List>
+            </Field>
             <!-- Fixed thermostat capabilities for MyAir - hidden since every MyAir
                  system has the same shape (one temp sensor, no humidity, a single
                  setTemp shared by cool/heat). Vent/Dry modes and fan speed don't fit
@@ -70,6 +83,11 @@
                 <Units>min</Units>
             </State>
         </States>
+        <!-- setpointCool and setpointHeat always hold the same value here (MyAir
+             has a single shared setTemp, not separate cool/heat setpoints - see
+             plugin.py's _poll_system), so either works to show the selected temp
+             in the device list's State column. -->
+        <UiDisplayStateId>setpointCool</UiDisplayStateId>
     </Device>
 
     <Device type="dimmer" id="zoneDevice">
