@@ -334,15 +334,22 @@ class Plugin(indigo.PluginBase):
         ip = dev.pluginProps.get("address", "")
         if not ip:
             self.logger.error(f"No IP address specified for {dev.name}")
+            dev.setErrorStateOnServer("No IP address configured")
             return
         data = self._get_system_data(ip)
         if data is None:
+            # _get_system_data already logged the specific reason (unreachable
+            # vs. a real error) - just reflect "not OK" onto the device itself,
+            # since until now only zone devices ever got an Indigo error state,
+            # never the parent AC System that's actually polling the network.
+            dev.setErrorStateOnServer("Could not reach controller")
             return
         try:
             ac = data["aircons"]["ac1"]
             info = ac["info"]
         except (KeyError, TypeError):
             self.logger.error(f"Unexpected response shape from {dev.name} at {ip}: {data}")
+            dev.setErrorStateOnServer("Unexpected response from controller")
             return
 
         state = info.get("state", "off")
@@ -405,6 +412,7 @@ class Plugin(indigo.PluginBase):
         if display_temp is not None:
             states.append({"key": "temperatureInput1", "value": display_temp, "uiValue": f"{display_temp:.1f} °"})
         dev.updateStatesOnServer(states)
+        dev.setErrorStateOnServer(None)
 
         if NEW_DEVICE_NAME_RE.match(dev.name.strip()):
             # Skip creating child devices while this still has Indigo's
