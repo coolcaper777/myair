@@ -277,6 +277,17 @@ class Plugin(indigo.PluginBase):
                 # a dead host 3x and logging a full traceback each time.
                 self.logger.warning(f"Could not reach MyAir controller at {ip}: {e}")
                 return None
+            except json.JSONDecodeError:
+                # Controller returned a non-JSON/empty body - seen in practice
+                # right after a timeout/connection-refused from the same
+                # controller, i.e. it's mid-reboot or its own web server is
+                # briefly restarting. A known, expected transient failure mode
+                # like the URLError case above, not a real bug - a plain
+                # traceback here reads as "the plugin is broken" to anyone
+                # watching the log, when it's actually just the controller
+                # having a moment. Warn cleanly instead.
+                self.logger.warning(f"MyAir controller at {ip} returned an invalid response (likely mid-reboot) - will retry next cycle")
+                return None
             except Exception:
                 self.logger.exception(f"Unexpected error fetching system data from MyAir controller at {ip}")
                 return None
