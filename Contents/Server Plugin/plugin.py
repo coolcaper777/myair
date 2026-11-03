@@ -898,9 +898,15 @@ class Plugin(indigo.PluginBase):
     def actionControlSpeedControl(self, action: indigo.PluginAction, dev: indigo.Device) -> None:
         """Handle a native speed-control action on the Fan Speed device.
 
-        MyAir has no fan-off or continuous-level concept, only discrete
-        Low/Medium/High/Auto, so TurnOn/TurnOff/Toggle/SetSpeedLevel are not
-        meaningful and just log a pointer to the right device/action instead.
+        MyAir has no fan-off concept, only discrete Low/Medium/High/Auto, so
+        TurnOn/TurnOff/Toggle are not meaningful and just log a pointer to
+        the right device/action instead. SetSpeedLevel (a 0-100 percentage)
+        IS handled, not just SetSpeedIndex — added 2026-10-05 because
+        HomeKit controls a SpeedControlDevice's RotationSpeed exclusively
+        via SetSpeedLevel (confirmed from HomeKitLink-Siri's own bridging
+        code: it always calls indigo.speedcontrol.setSpeedLevel(), never
+        setSpeedIndex), so a HomeKit-side Low/Medium/High tap was silently
+        no-op'ing into the log message below before this was added.
 
         Args:
             action (indigo.PluginAction): The speed-control action to perform.
@@ -921,6 +927,15 @@ class Plugin(indigo.PluginBase):
         sc = indigo.kSpeedControlAction
         if action.speedControlAction == sc.SetSpeedIndex:
             self._set_fan_speed_index(dev, system_dev, ip, action.actionValue)
+        elif action.speedControlAction == sc.SetSpeedLevel:
+            # 0-100 percentage -> nearest 1/2/3 index. Matches Indigo's own
+            # speedLevel convention for a 3-speed device (0/33/67/100), which
+            # is also exactly what LuminaHome's Low/Med/High buttons send.
+            speed_index = round(action.actionValue / 100 * 3)
+            if speed_index < 1:
+                self.logger.info(f"{dev.name}: use Low/Medium/High (this device) or the Fan Auto device for automatic speed")
+            else:
+                self._set_fan_speed_index(dev, system_dev, ip, speed_index)
         elif action.speedControlAction == sc.IncreaseSpeedIndex:
             new_index = min(3, dev.states.get("speedIndex", 0) + action.actionValue)
             self._set_fan_speed_index(dev, system_dev, ip, new_index)
@@ -930,8 +945,8 @@ class Plugin(indigo.PluginBase):
         elif action.speedControlAction == sc.RequestStatus:
             self._poll_system(system_dev)
         else:
-            # TurnOn/TurnOff/Toggle/SetSpeedLevel: MyAir has no fan-off or
-            # continuous-level concept, only discrete Low/Medium/High/Auto.
+            # TurnOn/TurnOff/Toggle: MyAir has no fan-off concept, only
+            # discrete Low/Medium/High/Auto.
             self.logger.info(f"{dev.name}: use Low/Medium/High (this device) or the Fan Auto device for automatic speed")
 
     def _set_fan_speed_index(self, dev: indigo.Device, system_dev: indigo.Device, ip: str, speed_index: int) -> None:
