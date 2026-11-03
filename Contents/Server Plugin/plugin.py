@@ -64,6 +64,13 @@ class Plugin(indigo.PluginBase):
         self.poll_interval = 15  # seconds between polls of each AC system
         self.debug = self.pluginPrefs.get("showDebugInfo", False)
         self.indigo_log_handler.setLevel(logging.DEBUG if self.debug else logging.INFO)
+        self.logger.info(f"Indigo API Version detected: {indigo.server.apiVersion}")
+        try:
+            api_version = float(indigo.server.apiVersion)
+        except (TypeError, ValueError):
+            api_version = 0.0
+        if api_version <= 3:
+            self.logger.error(f"API version too old! Requires greater than 3.0, got {indigo.server.apiVersion}")
 
     def startup(self) -> None:
         """Called once by Indigo when the plugin starts running."""
