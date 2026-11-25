@@ -786,7 +786,10 @@ class Plugin(indigo.PluginBase):
         elif action.deviceAction == indigo.kDeviceAction.TurnOff:
             self._send_command(ip, {"ac1": {"zones": {zone_key: {"state": "close"}}}})
         elif action.deviceAction == indigo.kDeviceAction.SetBrightness:
-            self._send_command(ip, {"ac1": {"zones": {zone_key: {"state": "open", "value": action.actionValue}}}})
+            if action.actionValue <= 0:
+                self._send_command(ip, {"ac1": {"zones": {zone_key: {"state": "close"}}}})
+            else:
+                self._send_command(ip, {"ac1": {"zones": {zone_key: {"state": "open", "value": action.actionValue}}}})
         elif action.deviceAction == indigo.kDeviceAction.BrightenBy:
             new_value = min(100, dev.states.get("brightnessLevel", 0) + action.actionValue)
             self._send_command(ip, {"ac1": {"zones": {zone_key: {"state": "open", "value": new_value}}}})
