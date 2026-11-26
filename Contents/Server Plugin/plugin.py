@@ -690,7 +690,14 @@ class Plugin(indigo.PluginBase):
         """
         mode_str = HVAC_MODE_TO_MYAIR.get(hvac_mode)
         if mode_str is None and hvac_mode != indigo.kHvacMode.Off:
-            self.logger.error(f"Unsupported HVAC mode for {dev.name} - use the Set AC Mode action for Vent/Dry")
+            # Indigo's thermostat base class always offers "Auto" (kHvacMode.HeatCool)
+            # alongside Heat/Cool once SupportsHvacOperationMode is on - there's no SDK
+            # field to remove just that one option. The real MyAir controller has no
+            # auto mode, so reject it here and re-poll immediately to snap the device's
+            # displayed mode back to its real state rather than leaving the UI showing
+            # "Auto" selected until the next regular poll cycle.
+            self.logger.error(f"{dev.name}: MyAir has no Auto mode - choose Cool or Heat instead")
+            self._poll_system(dev)
             return
         payload = {"ac1": {"info": {"state": "off" if hvac_mode == indigo.kHvacMode.Off else "on"}}}
         if mode_str:
